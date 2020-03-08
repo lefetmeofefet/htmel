@@ -1,0 +1,45 @@
+{
+  "name": "htmel",
+  "version": "0.0.2",
+  "description": "Minimal HTML one-way binding library",
+  "module": "./src/htmel.js",
+  "scripts": {
+    "upload": ""
+  },
+  "author": {
+    "name": "Davdavdavdavit",
+    "email": "davidgdalevich7@gmail.com"
+  },
+  "contributors": [
+    {
+      "name": "Harambe",
+      "email": "davidgdalevich7@gmail.com",
+      "url": "http://harambism.ca/"
+    }
+  ],
+  "bugs": {
+    "email": "davidgdalevich7@gmail.com",
+    "url": "https://gitlab.com/html-libraries/htmel/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://gitlab.com/html-libraries/htmlefet"
+  },
+  "license": "MIT license",
+  "keywords": [
+    "html",
+    "template",
+    "frontend",
+    "rendering"
+  ],
+  "devDependencies": {
+    "@babel/core": "^7.8.7",
+    "@babel/preset-env": "^7.8.7",
+    "@babel/register": "^7.8.6",
+    "babel-loader": "^8.0.6",
+    "terser-webpack-plugin": "^2.3.5",
+    "webpack": "^4.42.0",
+    "webpack-cli": "^3.3.11",
+    "webpack-shell-plugin": "^0.5.0"
+  }
+}

@@ -1,0 +1,20 @@
+<script type="module">
+    import htmel from "../dist/htmel.min.js"
+
+    window.state = {
+        a: "a",
+        b: "b",
+        c: "c"
+    };
+
+    let boundElement = htmel(state)`
+<div>
+    hi
+    ${() => state.a}
+    ${() => state.b}
+    ${() => state.c}
+</div>
+`;
+
+    document.body.appendChild(boundElement);
+</script>
