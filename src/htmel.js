@@ -37,6 +37,8 @@
  * list additions: instead of overwriting the whole list each time, check which bound objects CHANGED (added / removed)
  * when both attribute name and value contain expression, only one BoundNode is created for the name and value is not updated
  * Move stuff into consts - better minifying
+ * support promises as expressions instead of cbs
+ * call expressions with some parameter that gives them something, idk what yet (smth => ... instead of () => ...)
  */
 
 /** TODO: Problem with watch is that a re-evaluation won't be queued if a parameter wasn't accessed before,
@@ -169,7 +171,7 @@ class BoundNode {
             if (this.type === NodeTypes.ATTR_VALUE &&
                 this.expressions.length === 1 && typeof this.expressions[0].lastResult === "function") {
 
-                // TODO: change event if was called again with different value
+                // TODO: change event if was called again with different value (different function)
                 if (attachedEvent == null) {
                     let eventName = this.domNode.name.substring(2); // Remove the `on` from `onclick`
                     this.domNode.ownerElement.addEventListener(eventName, (...args) => attachedEvent(...args));
@@ -207,10 +209,16 @@ class Expression {
         this.id = _randomId();
         this.lastResult = null;
         this.boundNode = null;
+        this.isEvent = false;
     }
 
     execute() {
-        this.lastResult = this._cb();
+        if (this.isEvent) {
+            this.lastResult = this._cb;
+        }
+        else {
+            this.lastResult = this._cb();
+        }
     }
 }
 
@@ -293,6 +301,11 @@ function bindNodesToExpressions(element, expressions) {
         let boundNode = new BoundNode(expressions,
             domNodeInfo.domNode, domNodeInfo.type, domNodeInfo.updateDomNodeCb, domNodeInfo.initialValue);
         expressions.forEach(expression => expression.boundNode = boundNode);
+
+        // Make expression not evaluate the function if it's an event
+        if (boundNode.type === NodeTypes.ATTR_VALUE && boundNode.domNode.name.startsWith("on")) {
+            expressions.forEach(expression => expression.isEvent = true);
+        }
     }
 }
 
@@ -304,6 +317,13 @@ function bindNodesToExpressions(element, expressions) {
  */
 function htmel(propsObject, maxFps=60) {
     return (strings, ...expressionsCbs) => {
+        // Check if one of the expressions is not a function
+        let nonFunc = expressionsCbs.find(ex => typeof ex !== "function");
+        if (nonFunc) {
+            throw `HTMEL: All of the expressions must be callbacks (change "${nonFunc}" to "() => ${nonFunc}")`
+        }
+
+        // Create expressions and htmel element
         let expressions = expressionsCbs.map(cb => new Expression(cb));
         let element = _createTemplateElement(_joinTemplateStrings(strings, expressions.map(e => e.id)));
         bindNodesToExpressions(element, expressions);

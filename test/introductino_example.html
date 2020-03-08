@@ -18,36 +18,39 @@
         deathColor: "blue"
     };
 
-    // Using htmlefet to bind state object to an html template
     let boundElement = htmel(state)`
-        <div>
-            My name is <span style="color: ${() => state.color}">
-                ${() => state.name}
-            </span>
+<div>
+    My name is <span style="color: ${() => state.color}">
+        ${() => state.name}
+    </span>
 
-            <div>i will live ${() => state.age + 1}ever</div>
+    <div>i will live ${() => state.age + 1}ever</div>
 
-            <button onclick="${() => () => state.clicks += 1}">
-                click me baby ${() => state.clicks} more time
-            </button>
+    <button onclick="${() => () => state.clicks += 1}">
+        click me baby ${() => state.clicks} more time
+    </button>
 
-            <style>
-             #thing {
-                color: ${() => state.color};
-             }
-            </style>
-            <div id="thing">colorful things</div>
+    <style>
+     #thing {
+        color: ${() => state.color};
+     }
+    </style>
+    <div id="thing">colorful things</div>
 
-            <input placeholder=${() => state.placeholder}>
-            <div ${() => state.hidden ? "hidden" : ""}>hidden</div>
+    <input placeholder=${() => state.placeholder}>
+    <div ${() => state.hidden ? "hidden" : ""}>hidden</div>
 
-            <div>
-                ${() => state.amAlive ? "yes" : htmel(innerState)`
-                    <span style="color: ${() => innerState.deathColor}; font-size: ${() => innerState.deathColor === "blue" ? "40px" : "13px"};">NO</span>`}
-            </div>
+    <div>
+        ${() => state.amAlive ? "yes" : htmel(innerState)`
 
-        </div>
-    `;
+            <span style="color: ${() => innerState.deathColor};font-size: ${() => innerState.deathColor === "blue" ? "40px" : "13px"};">
+                NO
+            </span>`
+        }
+    </div>
+
+</div>
+`;
 
     // boundElement is a regular html element
     document.body.appendChild(boundElement);

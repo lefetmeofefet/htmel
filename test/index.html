@@ -1,20 +1,18 @@
 <script type="module">
-    import htmel from "../dist/htmel.min.js"
+    import htmel from "../src/htmel.js"
 
-    window.state = {
-        a: "a",
-        b: "b",
-        c: "c"
-    };
-
-    let boundElement = htmel(state)`
-<div>
-    hi
-    ${() => state.a}
-    ${() => state.b}
-    ${() => state.c}
-</div>
+	window.state = {
+		a: 5
+	};
+	
+	let b = 3
+ 
+	let boundElement = htmel(state)`
+<button onmouseover="${()=>"console.log('lefet')"}" onclick=${() => state.a+=1}>
+    ${() => b + state.a}
+</button>
 `;
 
-    document.body.appendChild(boundElement);
+document.body.appendChild(boundElement);
+
 </script>

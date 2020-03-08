@@ -1,10 +1,11 @@
 {
   "name": "htmel",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Minimal HTML one-way binding library",
   "module": "./src/htmel.js",
   "scripts": {
-    "upload": ""
+    "build": "webpack",
+    "upload": "npm publish --access=public"
   },
   "author": {
     "name": "Davdavdavdavit",

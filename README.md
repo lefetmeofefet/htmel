@@ -49,7 +49,7 @@ window.state = {
 }; 
 
 let boundElement = htmel(state)`
-<button onclick=${() => () => state.clicks += 1}>
+<button onclick=${() => state.clicks += 1}>
     I'm a button that's been clicked ${() => state.clicks} times
 </button>
 `;
@@ -80,7 +80,7 @@ CSS:
 
 Events:
 ```javascript
-`<button onclick=${() => () => state.a+=1}>
+`<button onclick=${() => state.a+=1}>
     ${() => state.a}
 </button>`
 ```
@@ -98,7 +98,7 @@ window.state = {
 htmel(state)`
 <div>
 ${() => state.items.map(item => htmel(item)`
-    <div>${item.name}</div>
+    <div>${() => item.name}</div>
 `)}
 </div>
 `
@@ -148,7 +148,7 @@ let boundElement = htmel(state)`
 
         <div>i will live ${() => state.age + 1}ever</div>
 
-        <button onclick="${() => () => state.clicks += 1}">
+        <button onclick="${() => state.clicks += 1}">
             click me baby ${() => state.clicks} more time
         </button>
 
