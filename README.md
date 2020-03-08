@@ -1,8 +1,8 @@
 # HTMEL
 `htmel` is a small (6kb) JavaScript library that lets you create declarative html templates, with no special syntax 
-to learn, is simple to use and extremely fast.
+to learn, simple to use and extremely fast.
 
-Hello world:
+Hello world example:
 ```javascript
 import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
@@ -17,7 +17,6 @@ let boundElement = htmel(state)`
 `;
 
 document.body.appendChild(boundElement);
-
 state.who = "World!"
 ```
 Try it live on <a href="https://jsfiddle.net/x4z3w6sr/">JSFiddle</a>
@@ -25,7 +24,7 @@ Try it live on <a href="https://jsfiddle.net/x4z3w6sr/">JSFiddle</a>
 # Overview
 `htmel` exports a single function that receives a state object and an HTML 
 Template string, and returns an HTML element that's bound to the given state 
-object: when a property changes in state, the element changes:
+object. when a property changes in state, the element changes:
 ```javascript
 import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
@@ -49,6 +48,7 @@ In the above example, `htmel` hooked the `state` object so that when
 `state.clicks` is set, `htmel` update the relevant TextNode.
 
 ## Example
+Comprehensive example highlighting all the features of `htmel`:
 ```javascript
 import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
