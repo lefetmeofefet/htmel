@@ -40,6 +40,7 @@ changes the element accordingly.
 
 Making a static (non-bound) element is possible too: 
 ```javascript
+let param = "text";
 htmel()`<div>${param}</div>` 
 ```
 
@@ -47,7 +48,7 @@ _note that if the expression in not a function, it will never update._
 
 ### Speed
 The updates to the DOM are fast. `htmel` saves references to DOM elements, and 
-when state changes, updates only the relevant elements instead of the whole 
+when state changes, it updates only the relevant elements instead of the whole 
 root element.
 
 To demonstrate that, consider the following code:
@@ -62,7 +63,7 @@ state.class = "classy";
 state.content = "a content";
 ```
 Instead of overwriting the whole div twice, `htmel` first updates the property 
-`class`, then the textNode. Notice that the other irrelevant text wasn't touched.
+`class`, then the textNode `content`. Notice that the other irrelevant text wasn't touched.
 
 ### API
 `htmel` exports a single function that receives an optional state object and 
@@ -241,10 +242,20 @@ randomly generated IDs into the expressions, the then finding them.
 In order to minimize the amount of DOM operations being done, `htmel` batches DOM
 updates instead of immediately updating when setters are called.
 
-### Why are the values inside the template Functions?
-If the expressions inside the template weren't functions, `htmel` wouldn't be 
-able to rerun them when state's properties are changed, it's simple as that.
-I could use `eval` to convert expressions into callbacks but that would be dirty.
+### Why bound expression must be functions?
+When an expression isn't a function, `htmel` can't rerun it when state's properties are 
+changed - in fact, no property is linked to a static expression. Consider this expression:
+```javascript
+${state.a}
+```
+`htmel` can't possible know that the property `a` is linked to this expression, because only
+the value of `a` is passed.
+
+Its possible to use `eval` to convert expressions into callbacks (add `()=>` to the above code)
+ but that would slow performance and be prone to errors and security problems.
 
 ## Contribution
-Feel free to suggest changes and open PRs :)
+Feel free to contact me about bugs, features and anything you'd like.
+
+If you like this project and you feel like contributing, questions about the code and PRs are 
+very welcome :)
