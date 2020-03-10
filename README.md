@@ -13,13 +13,13 @@ window.state = {
     who: "World?"
 }; 
 
-let boundElement = htmel(state)`
+let element = htmel(state)`
 <div>
     Hello ${() => state.who}
 </div>
 `;
 
-document.body.appendChild(boundElement);
+document.body.appendChild(element);
 state.who = "World!"
 ```
 Try it live on <a href="https://jsfiddle.net/x4z3w6sr/">JSFiddle</a>
@@ -28,19 +28,47 @@ Try it live on <a href="https://jsfiddle.net/x4z3w6sr/">JSFiddle</a>
 `htmel` tries to stay as unopinionated as possible by sticking to HTML with no 
 special syntax. That makes defining a bound element simple:
 ```javascript
-let element = htmel(state)`<div>${() => state.text}</div>`
-state.text = "i am text"
+let element = htmel(state)`
+<div>
+    My name is ${() => state.text}
+</div>
+`;
+state.text = "Inigo Montoya"
 ```
 
-`element` is a regular HTML element, it can be referenced and changed in runtime.
+`element` is a regular HTML element. When `state.text` changes, `htmel` 
+changes the element accordingly.
 
-Apart from creating the element, `htmel` also keeps a reference to the div's
-content, changing it each time `state.text` is being set.
+Making a static (non-bound) element is possible too: 
+```javascript
+htmel()`<div>${param}</div>` 
+```
+
+_note that if the expression in not a function, it will never update._
+
+### Speed
+The updates to the DOM are fast. `htmel` saves references to DOM elements, and 
+when state changes, updates only the relevant elements instead of the whole 
+root element.
+
+To demonstrate that, consider the following code:
+```javascript
+let element = htmel(state)`
+<div class="${() => state.class}">
+    ${() => state.content}
+    Some other irrelevant content...
+</div>
+`;
+state.class = "classy";
+state.content = "a content";
+```
+Instead of overwriting the whole div twice, `htmel` first updates the property 
+`class`, then the textNode. Notice that the other irrelevant text wasn't touched.
 
 ### API
-`htmel` exports a single function that receives a state object and an HTML 
-Template string, and returns an HTML element that's bound to the given state 
-object. when a property changes in state, the element changes:
+`htmel` exports a single function that receives an optional state object and 
+an HTML Template string, and returns an HTML element that's bound to the given 
+state object. when a property changes in state, the element changes accordingly:
 ```javascript
 import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
@@ -48,13 +76,13 @@ window.state = {
     clicks: 0
 }; 
 
-let boundElement = htmel(state)`
+let element = htmel(state)`
 <button onclick=${() => state.clicks += 1}>
     I'm a button that's been clicked ${() => state.clicks} times
 </button>
 `;
 
-document.body.appendChild(boundElement);
+document.body.appendChild(element);
 ```
 
 `htmel` updates only what it needs to update by keeping references to elements
@@ -95,13 +123,18 @@ window.state = {
     }]
 };
 
-htmel(state)`
+let element = htmel(state)`
 <div>
 ${() => state.items.map(item => htmel(item)`
     <div>${() => item.name}</div>
 `)}
 </div>
-`
+`;
+// Modify only specific name
+state.items[0].name += "s";
+
+// Modify the whole list
+state.items = [{name: "new name"}, {name: "another"}]
 ```
 
 A single expression can contain multiple properties:
@@ -131,7 +164,6 @@ window.state = {
     clicks: 1,
 
     placeholder: "this is hint",
-    hidden: true,
 
     amAlive: true
 };
@@ -140,38 +172,38 @@ window.innerState = {
     deathColor: "blue"
 };
 
-let boundElement = htmel(state)`
+let element = htmel(state)`
+<div>
+    My name is <span style="color: ${() => state.color}">
+        ${() => state.name}
+    </span>
+
+    <div>i will live ${() => state.age + 1}ever</div>
+    <div>i am ${"static"}</div>
+
+    <button onclick="${() => state.clicks += 1}">
+        click me baby ${() => state.clicks} more time
+    </button>
+
+    <style>
+     #thing {
+        color: ${() => state.color};
+     }
+    </style>
+    <div id="thing">colorful things</div>
+
+    <input placeholder=${() => state.placeholder}>
+
     <div>
-        My name is <span style="color: ${() => state.color}">
-            ${() => state.name}
-        </span>
-
-        <div>i will live ${() => state.age + 1}ever</div>
-
-        <button onclick="${() => state.clicks += 1}">
-            click me baby ${() => state.clicks} more time
-        </button>
-
-        <style>
-         #thing {
-            color: ${() => state.color};
-         }
-        </style>
-        <div id="thing">colorful things</div>
-
-        <input placeholder=${() => state.placeholder}>
-        <div ${() => state.hidden ? "hidden" : ""}>hidden</div>
-
-        <div>
-            ${() => state.amAlive ? "yes" : htmel(innerState)`
-                <span style="color: ${() => innerState.deathColor}; font-size: ${() => innerState.deathColor === "blue" ? "40px" : "13px"};">NO</span>`}
-        </div>
-
+        ${() => state.amAlive ? "yes" : htmel(innerState)`
+            <span style="color: ${() => innerState.deathColor}; font-size: ${() => innerState.deathColor === "blue" ? "40px" : "13px"};">NO</span>`}
     </div>
+
+</div>
 `;
 
-// boundElement is a regular html element
-document.body.appendChild(boundElement);
+// element is a regular html element
+document.body.appendChild(element);
 
 // modifying the state
 state.name = "John Cena!!!";
@@ -179,7 +211,7 @@ state.name = "John Cena!!!";
 // switching the color
 setInterval(() => state.color = state.color === "blue" ? "red" : "blue", 500);
 ```
-Try it live <a href="https://jsfiddle.net/0xy27kdr/">here</a>
+Try it live <a href="https://jsfiddle.net/uamrk0zL/">here</a>
 
 ## How does it work?
 Consider the following example:

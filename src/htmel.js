@@ -1,25 +1,33 @@
 /**
+ * HTMEL
+ *
  * A bound DomNode contains one or more expressions, and each expression is linked to one or more props. a prop can be
- * linked to more than one expression from different nodes
- *
- *
- * Prop --> Expression --> DomNode
- *      \               \
- *       -> Expression --> DomNode
- *                      /
- * Prop --> Expression -
- *       /
- * Prop -
+ * linked to more than one expression from different nodes.
+ * Example:
+
+ ```
+ <div>
+ <div>${() => state.a}</div>
+ <div class="${() => state.a}-${() => state.b + state.c}"/>
+ </div>
+ ```
+
+ * Explanation:
+ * a (Prop) --> Expression --> DomNode (div textNode)
+ *          \
+ *           -> Expression --> DomNode (class propertyNode)
+ *                         /
+ * b (Prop) --> Expression
+ *          /
+ * c (Prop)
  *
  */
 
 /** TODO
  * print prop to expression map + expression to domNode map. basically, print the whole template process...
- * spread attributes (list of attributes, as dict?)
- * make guide
- *      - in the guide, include react example like here: https://github.com/developit/htm
- *      - test run by jonathan, stav
- * Profile memory: do we leak? especially watcher
+ * spread attributes (list of attributes, as dict)
+ * profile memory: do we leak? especially watcher
+ * performance test
  * Partial CSS update. this is possible:
  *      - $0.sheet.cssRules[1].style.cssText = "background-color: blue;"
  *      - $0.sheet.cssRules[1].style.backgroundColor = "red"
@@ -33,12 +41,23 @@
  *      - whole css rule (selector + content) / multiple rules
  *      All of these must work together!!!
  *
- * Make element wrapper: HTMLefetElement, like litElement
+ * make element wrapper: HTMElement, like litElement
  * list additions: instead of overwriting the whole list each time, check which bound objects CHANGED (added / removed)
  * when both attribute name and value contain expression, only one BoundNode is created for the name and value is not updated
- * Move stuff into consts - better minifying
- * support promises as expressions instead of cbs
+ * support promises as expressions alongside cbs
  * call expressions with some parameter that gives them something, idk what yet (smth => ... instead of () => ...)
+ * receive multiple state objects (redux implementation without the shit)
+ * tests! so many tests to make.
+ *      - Error handling
+ *          - expression in html tag
+ *          - expression in attr name
+ *          - 2 expressions in event ("onclick") attr
+ *      - Edge cases
+ *          - event handler that returns a function instead should run that returned function as well
+ *          - expression that returns nothing shouldn't crash
+ *          - TextNode, test type changes: string -> list, obj -> list, string -> obj, list -> obj, list -> string, list -> obj
+ *          -
+ *
  */
 
 /** TODO: Problem with watch is that a re-evaluation won't be queued if a parameter wasn't accessed before,
@@ -51,22 +70,21 @@
  */
 
 import {watch} from "./objectWatcher.js"
-import {find, NodeTypes} from "./domNodeFinder.js"
+import {find, SearchLocations} from "./domNodeFinder.js"
 
-function throttle(func, wait, options) {
+function throttle(func, wait) {
+    // Leading throttle
     let context, args, result;
     let timeout = null;
     let previous = 0;
-    if (!options) options = {};
     let later = function () {
-        previous = options.leading === false ? 0 : Date.now();
+        previous = Date.now();
         timeout = null;
         result = func.apply(context, args);
         if (!timeout) context = args = null;
     };
     return function () {
         let now = Date.now();
-        if (!previous && options.leading === false) previous = now;
         let remaining = wait - (now - previous);
         context = this;
         args = arguments;
@@ -78,7 +96,7 @@ function throttle(func, wait, options) {
             previous = now;
             result = func.apply(context, args);
             if (!timeout) context = args = null;
-        } else if (!timeout && options.trailing !== false) {
+        } else if (!timeout) {
             timeout = setTimeout(later, remaining);
         }
         return result;
@@ -87,113 +105,120 @@ function throttle(func, wait, options) {
 
 class BoundNode {
     /**
-     *
+     * A single HTML node, containing all that's needed
      * @param {[Expression]} expressions
      * @param {Element} domNode
-     * @param {String} type
-     * @param {Function} updateDomNodeCb
-     * @param {String} initialValue
+     * @param {String} bindingLocation
      */
-    constructor(expressions, domNode, type, updateDomNodeCb, initialValue) {
+    constructor(expressions, domNode, bindingLocation) {
         this.expressions = expressions;
         this.domNode = domNode;
-        this.type = type;
-        this.updateDomNodeCb = updateDomNodeCb;
-        this.initialValue = initialValue;
-
-        if (type === NodeTypes.TEXT_NODE && domNode.parentElement.localName !== "style") {
-            this.updateCb = this.updateTextNodeValue();
-        } else {
-            this.updateCb = this.updateNodeValue();
-        }
+        this.bindingLocation = bindingLocation;
+        /** @type String */
+        this.initialValue = {
+            // TextNode content
+            [SearchLocations.TEXT_NODE]: () => domNode.data,
+            // Attribute value
+            [SearchLocations.ATTR_VALUE]: () => domNode.value,
+        }[bindingLocation]();
     }
 
     update() {
-        this.updateCb()
+        // TODO: style breaking? if (type === NodeTypes.TEXT_NODE && domNode.parentElement.localName !== "style") {
+        if (this.bindingLocation === SearchLocations.TEXT_NODE) {
+            this.updateTextNodeValue()
+        } else {
+            this.updateAttributeNodeValue()
+        }
     }
 
     updateTextNodeValue() {
         let expression = this.expressions[0];
-        let lastValue = "";
-        let arrayDomNodes = [];
-        return () => {
-            let newValue = expression.lastResult;
+        let newValue = expression.lastResult;
 
-            // TODO: Deal with typeof === "function" and promises
+        // TODO: Deal with typeof === "function" and promises
 
-            if (lastValue instanceof Array) {
-                // TODO: Keyed logic for performance: dont delete all, only changed keys
-                // Delete old array, make domNode the last remaining value
-                for (let domNodeToRemove of arrayDomNodes) {
-                    if (domNodeToRemove !== this.domNode) {
-                        domNodeToRemove.remove()
-                    }
-                }
-                arrayDomNodes = [];
+        if (this._lastTextNodeValue instanceof Array) {
+            // TODO: Keyed logic for performance: dont delete all, only changed keys
+            // TODO: Great performance proposition: keep global dict of state object -> htmel template. this way,
+            //  when the array is re-rendered, all previous templates are not recalculated
+            // Delete old array, make domNode the last remaining value
+            for (let domNodeToRemove of this._arrayDomNodes) {
+                domNodeToRemove.remove()
             }
+            this._arrayDomNodes = [];
+        }
 
-            if (newValue instanceof Array) {
-                arrayDomNodes = newValue.map(val => typeof val === "object" ? val : document.createTextNode(val));
-                let lastDomNodeInChain = this.domNode;
-                for (let domNodeToAdd of arrayDomNodes) {
-                    lastDomNodeInChain.parentNode.insertBefore(domNodeToAdd, lastDomNodeInChain.nextSibling);
-                    lastDomNodeInChain = domNodeToAdd;
-                }
-                this.domNode.remove();
-                this.domNode = arrayDomNodes[0];
-            } else if (typeof newValue === "object") {
-                // Deal with element
-                // TODO: Check if instanceof HTMLElement. if not, what do we do with objects?
-                this.domNode.replaceWith(newValue);
-                this.domNode = newValue;
-                console.log("##### Override object with element")
+        if (newValue instanceof Array) {
+            this._arrayDomNodes = newValue.map(val => typeof val === "object" ? val : document.createTextNode(val));
+            let listContainer = document.createElement("htmel-list-container");
+            this.domNode.replaceWith(listContainer);
+            this.domNode = listContainer;
+
+            for (let domNodeToAdd of this._arrayDomNodes) {
+                this.domNode.appendChild(domNodeToAdd);
+            }
+        } else if (typeof newValue === "object") {
+            // Deal with element
+            // TODO: Check if instanceof HTMLElement. if not, what do we do with objects? attr key-value mapping?
+            this.domNode.replaceWith(newValue);
+            this.domNode = newValue;
+            console.log("##### Override object with element")
+        } else {
+            if (typeof this._lastTextNodeValue === "object") {
+                // Handle an object becoming a string
+                let newTextNode = document.createTextNode(newValue);
+                this.domNode.replaceWith(newTextNode);
+                this.domNode = newTextNode;
             } else {
-                if (typeof lastValue === "object") {
-                    // Handle an object becoming a string
-                    let newTextNode = document.createTextNode(newValue);
-                    this.domNode.replaceWith(newTextNode);
-                    this.domNode = newTextNode;
-                    console.log("##### Convert object to string: Created new text node")
-                } else {
-                    this.updateDomNodeCb(newValue);
-                    console.log("##### Set normal textNode value")
-                }
+                this.domNode.data = newValue;
+            }
+        }
+
+        this._lastTextNodeValue = newValue;
+
+    }
+
+    updateAttributeNodeValue() {
+        // Checks if expression is an event handler, and adds an event listener if true.
+
+        if (this.bindingLocation === SearchLocations.ATTR_VALUE && this.expressions[0].isEventHandler) {
+            if (this.expressions.length > 1) {
+                let forbiddenEventHandlerText = fillStrWithExpressions(this.initialValue, this.expressions);
+                throw `HTMEL: Cant have more than one expression as event handler: ${forbiddenEventHandlerText}`
+            }
+            this._setEventListener();
+        } else {
+            // Replaces ids with expression values
+            let newValue = this.initialValue;
+            for (let expression of this.expressions) {
+                newValue = newValue.replace(expression.id, expression.lastResult)
             }
 
-            lastValue = newValue;
+            // TODO: Save last domValue and only update if the value changed. spare dom updates yay
+            this.domNode.value = newValue;
         }
     }
 
-    updateNodeValue() {
-        let attachedEvent = null;
-        let expression = this.expressions[0];
-        return () => {
-            if (this.type === NodeTypes.ATTR_VALUE &&
-                this.expressions.length === 1 && typeof this.expressions[0].lastResult === "function") {
+    /**
+     * This will never run twice, because no props are linked, because event handler expressions don't evaluate.
+     * @private
+     */
+    _setEventListener() {
+        let eventName = this.domNode.name.substring(2); // Remove the `on` from `onclick`
 
-                // TODO: change event if was called again with different value (different function)
-                if (attachedEvent == null) {
-                    let eventName = this.domNode.name.substring(2); // Remove the `on` from `onclick`
-                    this.domNode.ownerElement.addEventListener(eventName, (...args) => attachedEvent(...args));
-                    this.domNode.ownerElement.removeAttributeNode(this.domNode);
-                    this.updateDomNodeCb();
-                }
-                attachedEvent = expression.lastResult;
-            } else {
-                // Replaces ids with expression values
-                let newValue = this.initialValue;
-                for (let expression of this.expressions) {
-                    newValue = newValue.replace(expression.id, expression.lastResult)
-                }
+        this.domNode.ownerElement.addEventListener(eventName, (...args) => {
+            const result = this.expressions[0].lastResult(...args);
 
-                // Attribute name cant be empty
-                if (this.type === NodeTypes.ATTR_NAME && (newValue === "" || newValue == null)) {
-
-                }
-                // TODO: Save last domValue and only update if the value changed. spare dom updates yay
-                this.updateDomNodeCb(newValue);
+            // In case expression returns another function (user wrote ${() => () => print("stuff)} for example)
+            if (typeof result === "function") {
+                return result(...args)
             }
-        }
+
+            // TODO: If user returned a string (onclick="${() => state.wat ? "alert(1)" : "alert(2)}") we should eval that
+            return result
+        });
+        this.domNode.ownerElement.removeAttributeNode(this.domNode);
     }
 }
 
@@ -209,14 +234,14 @@ class Expression {
         this.id = _randomId();
         this.lastResult = null;
         this.boundNode = null;
-        this.isEvent = false;
+        this.isEventHandler = false;
+        this.isStatic = (typeof this._cb) !== "function";
     }
 
     execute() {
-        if (this.isEvent) {
+        if (this.isEventHandler || this.isStatic) {
             this.lastResult = this._cb;
-        }
-        else {
+        } else {
             this.lastResult = this._cb();
         }
     }
@@ -233,7 +258,7 @@ function _joinTemplateStrings(arr1, arr2) {
  * @private
  */
 function _createTemplateElement(html) {
-    let templateTag = document.createElement("template");
+    const templateTag = document.createElement("template");
     templateTag.innerHTML = html;
 
     if (templateTag.content.children.length > 1) {
@@ -244,8 +269,43 @@ function _createTemplateElement(html) {
     return templateTag.content.firstElementChild;
 }
 
+/**
+ * Receives a textNode and divider (`textToMakeNode`), and breaks up the textNode into 3 textNodes: before, after and
+ * middle, and returns the middle. The middle is the part that's equal to `textToMakeNode` and its value is changed to it.
+ * the other parts are inserted into the DOM.
+ * Example: node "123" with divider "2" will return insert "1" and "3" into the DOM, and return "2".
+ * node "23" with divider "2" will insert "3" into DOM and return "2".
+ * @param {Text} textNode
+ * @param {String} textToMakeNode
+ * @returns {Text}
+ * @private
+ */
+function _breakUpTextNodeToSmallerNodes(textNode, textToMakeNode) {
+    let wholeText = textNode.data;
+    let textStartIndex = textNode.data.indexOf(textToMakeNode);
+    let textEndIndex = textStartIndex + textToMakeNode.length;
+
+    // Insert node before
+    if (textStartIndex !== 0) {
+        textNode.parentNode.insertBefore(
+            document.createTextNode(wholeText.substring(0, textStartIndex)),
+            textNode
+        );
+    }
+
+    // Insert node after
+    if (textEndIndex < wholeText.length) {
+        textNode.parentNode.insertBefore(
+            document.createTextNode(wholeText.substring(textEndIndex)),
+            textNode.nextSibling
+        );
+    }
+
+    textNode.data = wholeText.substring(textStartIndex, textEndIndex);
+    return textNode;
+}
+
 function fillStrWithExpressions(str, expressions) {
-    str = `<${str}>`;
     for (let exp of expressions) {
         str = str.replace(exp.id, "${" + exp._cb.toString() + "}")
     }
@@ -260,72 +320,65 @@ function fillStrWithExpressions(str, expressions) {
  * @private
  */
 function bindNodesToExpressions(element, expressions) {
-    /** @type {Map<Element, {domNodeInfo: {domNode: HTMLElement, type: String, value, updateDomNodeCb: Function},
-     *                       expressions: *[]}>} */
-    let domNodeToExpressionsAndInfo = new Map();
+    /** @type {Map<Element, BoundNode>} */
+    const domNodeToBoundNode = new Map();
+
     for (let expression of expressions) {
-        let domNodeInfo = find(element, expression.id);
-        if (domNodeToExpressionsAndInfo.has(domNodeInfo.domNode)) {
-            let existing = domNodeToExpressionsAndInfo.get(domNodeInfo.domNode);
+        let searchResult = find(element, expression.id);
+        if (searchResult == null) {
+            throw `HTMEL: Expression location is not valid: ${"${" + expression._cb.toString() + "}"}`
+        }
+        let {domNode, searchLocation} = searchResult;
 
-            // Check if the same node has different types of expressions (attrName and attrValue on the same attrNode)
-            if (existing.domNodeInfo.type !== domNodeInfo.type) {
-                let attributeText = `${existing.domNodeInfo.domNode.name}="${existing.domNodeInfo.domNode.value}"`;
-                attributeText = fillStrWithExpressions(attributeText, [expression, ...existing.expressions]);
-                if (existing.domNodeInfo.type === NodeTypes.ATTR_NAME && domNodeInfo.type === NodeTypes.ATTR_VALUE) {
-                    throw `HTMEL: Attribute can't be bound in both name and value (${attributeText})`
-                }
-                throw `HTMEL: Node has multiple expression types: ${attributeText}`
-            }
+        // Break up textNode
+        if (searchLocation === SearchLocations.TEXT_NODE) {
+            domNode = _breakUpTextNodeToSmallerNodes(domNode, expression.id)
+        }
 
-            existing.expressions.push(expression)
+        // If template is inside html tag name, throw exception
+        if (searchLocation === SearchLocations.HTML_TAG) {
+            let forbiddenTagText = fillStrWithExpressions(`<${domNode.localName}>`, [expression]);
+            throw `HTMEL: Calculating element name is not allowed: ${forbiddenTagText}`
+        }
+
+        // If template is inside attribute name, throw exception
+        if (searchLocation === SearchLocations.ATTR_NAME) {
+            let forbiddenAttrValueText = fillStrWithExpressions(domNode.localName, [expression]);
+            throw `HTMEL: Calculating attribute name is not allowed: ${forbiddenAttrValueText}`
+        }
+
+        // Expressions on attrs that start with "on" shouldn't evaluate, setting `isEventHandler`
+        if (searchLocation === SearchLocations.ATTR_VALUE && domNode.name.startsWith("on")) {
+            expression.isEventHandler = true;
+        }
+
+        // Create BoundNodes, deduping domNodes that are found multiple times because of multiple expressions
+        if (domNodeToBoundNode.has(domNode)) {
+            let boundNode = domNodeToBoundNode.get(domNode);
+            boundNode.expressions.push(expression);
+            expression.boundNode = boundNode;
         } else {
-            domNodeToExpressionsAndInfo.set(domNodeInfo.domNode, {
-                domNodeInfo: domNodeInfo,
-                expressions: [expression]
-            });
+            let boundNode = new BoundNode([expression], domNode, searchLocation);
+            domNodeToBoundNode.set(domNode, boundNode);
+            expression.boundNode = boundNode;
         }
     }
 
     console.log("DomNodes + Expressions: ");
-    console.log([...domNodeToExpressionsAndInfo.values()]);
-
-    for (let {expressions, domNodeInfo} of domNodeToExpressionsAndInfo.values()) {
-        // If template is inside html tag name, throw exception
-        if (domNodeInfo.type === NodeTypes.HTML_ELEMENT) {
-            let tagText = fillStrWithExpressions(domNodeInfo.domNode.localName, expressions);
-            throw `HTMEL: Calculating element name is not allowed (${tagText})`
-        }
-
-        // Bind expressions to BoundNodes
-        let boundNode = new BoundNode(expressions,
-            domNodeInfo.domNode, domNodeInfo.type, domNodeInfo.updateDomNodeCb, domNodeInfo.initialValue);
-        expressions.forEach(expression => expression.boundNode = boundNode);
-
-        // Make expression not evaluate the function if it's an event
-        if (boundNode.type === NodeTypes.ATTR_VALUE && boundNode.domNode.name.startsWith("on")) {
-            expressions.forEach(expression => expression.isEvent = true);
-        }
-    }
+    console.log([...domNodeToBoundNode.values()]);
 }
 
 /**
- * Rerenders expressions when the values they use on propsObject change.
+ * Returns an html element that will be modified when state object's properties change.
  * @param {Object} propsObject Holds the state of this htmel element
  * @param {Number} maxFps The maximum rate at which updates are applied to DOM. More FPS = smoother UI.
  * @returns {function(*=, ...[*]): Element}
  */
-function htmel(propsObject, maxFps=60) {
+function htmel(propsObject = {}, maxFps = 60) {
     return (strings, ...expressionsCbs) => {
-        // Check if one of the expressions is not a function
-        let nonFunc = expressionsCbs.find(ex => typeof ex !== "function");
-        if (nonFunc) {
-            throw `HTMEL: All of the expressions must be callbacks (change "${nonFunc}" to "() => ${nonFunc}")`
-        }
-
         // Create expressions and htmel element
-        let expressions = expressionsCbs.map(cb => new Expression(cb));
-        let element = _createTemplateElement(_joinTemplateStrings(strings, expressions.map(e => e.id)));
+        const expressions = expressionsCbs.map(cb => new Expression(cb));
+        const element = _createTemplateElement(_joinTemplateStrings(strings, expressions.map(e => e.id)));
         bindNodesToExpressions(element, expressions);
 
         let isExecutingExpression = false;
@@ -346,7 +399,6 @@ function htmel(propsObject, maxFps=60) {
             );
         }
 
-
         /** @type {Map<String, Set<Expression>>} */
         let propsToExpressions = new Map();
 
@@ -363,7 +415,7 @@ function htmel(propsObject, maxFps=60) {
             changedPropsList.clear();
             updateExpressions([...expressionsToExecute])
 
-        }, 1000 / maxFps, {leading: true});
+        }, 1000 / maxFps);
 
 
         /** @param {[Expression]} exs */

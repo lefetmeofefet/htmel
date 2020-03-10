@@ -1,42 +1,45 @@
+// TODO: Make library.
 
+/**
+ * Calls `onGet` and `onSet` each time a property is accessed / set.
+ * It does so by wrapping the object with getters and setters
+ * @param {Object} object
+ * @param {Function} onGet
+ * @param {Function} onSet
+ */
 function watch(object, onGet, onSet) {
-    // TODO: Understand this shit. Why put setters and getters on existing objects instead of removing them all, and
-    //  save them on the `existingPropsHolder`, and when we get access to non-existing prop we check it in holder?
-    // This answer explains the logic pretty well:
-    // https://stackoverflow.com/questions/52031628/transform-a-javascript-object-into-a-proxy-and-not-its-reference
+    const propsHolder = {};
 
-    // proxy a new prototype for that object...
-    const ctr = {};
-    const existingPropsHolder = {};
-
-    // For existing props of object
-    const properties = Object.getOwnPropertyDescriptors(object);
-    for (let propertyName of Object.keys(properties)) {
-        existingPropsHolder[propertyName] = object[propertyName];
+    const wrapWithGetSet = propertyName => {
         Object.defineProperty(object, propertyName, {
             get() {
                 onGet && onGet(propertyName);
-                return existingPropsHolder[propertyName]
+                return propsHolder[propertyName]
             },
             set(value) {
-                existingPropsHolder[propertyName] = value;
+                propsHolder[propertyName] = value;
                 onSet && onSet(propertyName, value);
             }
-        })
+        });
+    };
+
+    // Wrap existing properties with getters & setters
+    const properties = Object.getOwnPropertyDescriptors(object);
+    for (let propertyName of Object.keys(properties)) {
+        propsHolder[propertyName] = object[propertyName];
+        wrapWithGetSet(propertyName)
     }
 
-    // For new props, i think
-    Object.setPrototypeOf(object, new Proxy(ctr, {
-        get(target, key) {
-            onGet && onGet(key);
-            return Reflect.get(target, key) || ctr[key];
+    // Use proxy to intercept new properties
+    Object.setPrototypeOf(object, new Proxy(propsHolder, {
+        get(target, propertyName) {
+            // This is only called when trying to get non existing props.
+            wrapWithGetSet(propertyName);
+            Reflect.get(object, propertyName)
         },
-        set(target, key, value) {
-            // setting this container object instead of object keeps object clean,
-            // and allows get access to that property to continue being
-            // intercepted by the proxy
-            Reflect.set(ctr, key, value);
-            onSet && onSet(key, value);
+        set(target, propertyName, value) {
+            wrapWithGetSet(propertyName);
+            object[propertyName] = value;
             return true;
         }
     }));
