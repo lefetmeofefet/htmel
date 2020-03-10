@@ -4,25 +4,24 @@
 `htmel` lets you write declarative html, with no special syntax 
 to learn, while being small and blazing fast.
 
-
-Hello world example:
+Time counter example:
 ```javascript
 import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
 window.state = {
-    who: "World?"
-}; 
+    age: 1
+};
 
 let element = htmel(state)`
 <div>
-    Hello ${() => state.who}
+    My age is ${() => state.age} seconds
 </div>
 `;
 
 document.body.appendChild(element);
-state.who = "World!"
+setInterval(() => state.age += 1, 1000)
 ```
-Try it live on <a href="https://jsfiddle.net/x4z3w6sr/">JSFiddle</a>
+Try it live on <a href="https://jsfiddle.net/Numbnut/6c7ovnuk/2/">JSFiddle</a>
 
 # Overview
 `htmel` tries to stay as unopinionated as possible by sticking to HTML with no 
@@ -211,7 +210,7 @@ state.name = "John Cena!!!";
 // switching the color
 setInterval(() => state.color = state.color === "blue" ? "red" : "blue", 500);
 ```
-Try it live <a href="https://jsfiddle.net/uamrk0zL/">here</a>
+Try it live on <a href="https://jsfiddle.net/Numbnut/90h36g1L/">JSFiddle</a>
 
 ## How does it work?
 Consider the following example:
