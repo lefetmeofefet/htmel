@@ -1,14 +1,18 @@
 # HTMEL
-![npm bundle size](https://img.shields.io/bundlephobia/min/htmel)
+![npm bundle size](https://img.shields.io/github/size/lefetmeofefet/htmel/dist/htmel.min.js)
 
-`htmel` lets you write declarative html, with no special syntax 
-to learn, while being small and blazing fast.
+Simple, Efficient, Declarative HTML templates with one-way data binding.
+
+_Why should I use this over the likes of react and vue?_
+* Faster
+* Simpler
+* Unopinionated
 
 Time counter example:
 ```javascript
 import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
-window.state = {
+let state = {
     age: 1
 };
 
@@ -21,75 +25,82 @@ let element = htmel(state)`
 document.body.appendChild(element);
 setInterval(() => state.age += 1, 1000)
 ```
-Try it live on <a href="https://jsfiddle.net/Numbnut/6c7ovnuk/2/">JSFiddle</a>
+Try it live on [JSFiddle](https://jsfiddle.net/Numbnut/6c7ovnuk/2/)
 
-# Overview
-`htmel` tries to stay as unopinionated as possible by sticking to HTML with no 
-special syntax. That makes defining a bound element simple:
+## Installation
+**From CDN:** Include the import statement in your script.
+
 ```javascript
-let element = htmel(state)`
+import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
+```
+
+**From NPM:** `npm install htmel`, Then include in your script:
+```javascript
+import htmel from "htmel"
+```
+
+## Overview
+`htmel` lets you write [HTML templates](https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template) in JavaScript with [template literals](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Template_literals).
+htmel stays as unopinionated as possible by sticking to HTML with no special syntax.
+
+`htmel` provides a single export:
+```javascript
+let text = "World!"
+let element = htmel()`
 <div>
-    My name is ${() => state.text}
+    Hello ${text}
 </div>
 `;
-state.text = "Inigo Montoya"
+document.body.appendChild(element)
 ```
 
-`element` is a regular HTML element. When `state.text` changes, `htmel` 
-changes the element accordingly.
+`element` is a regular HTML element that we can insert into the DOM.
 
-Making a static (non-bound) element is possible too: 
+#### Data Binding
+`htmel` provides a way to update an element by binding it to a state object. 
+When a property on the state object changes, `htmel` automatically updates 
+only the relevant part of the element:
+
 ```javascript
-let param = "text";
-htmel()`<div>${param}</div>` 
+let state = {
+    text: "World?"
+}
+
+let element = htmel(state)`
+<div>
+    Hello ${() => state.text}
+</div>
+`;
+state.text = "World!"
 ```
 
-_note that if the expression in not a function, it will never update._
+In the above example, when `state.text` changed, `htmel` 
+modified the div's content.
 
-### Speed
-The updates to the DOM are fast. `htmel` saves references to DOM elements, and 
+_Notice that we used an arrow function `() => state.text` instead of 
+just `state.text`. When using state's properties, always use arrow
+functions, otherwise `htmel` won't update the template._
+
+#### Speed
+`htmel` is extremely fast. `htmel` saves references to DOM elements, and 
 when state changes, it updates only the relevant elements instead of the whole 
 root element.
 
-To demonstrate that, consider the following code:
+Consider the following code that contains two expressions and some static content:
 ```javascript
 let element = htmel(state)`
 <div class="${() => state.class}">
     ${() => state.content}
-    Some other irrelevant content...
+    <div>Some other irrelevant static content...</div>
 </div>
 `;
 state.class = "classy";
 state.content = "a content";
 ```
+First `state.class` was set, and then `state.content`.
+
 Instead of overwriting the whole div twice, `htmel` first updates the property 
-`class`, then the textNode `content`. Notice that the other irrelevant text wasn't touched.
-
-### API
-`htmel` exports a single function that receives an optional state object and 
-an HTML Template string, and returns an HTML element that's bound to the given 
-state object. when a property changes in state, the element changes accordingly:
-```javascript
-import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
-
-window.state = {
-    clicks: 0
-}; 
-
-let element = htmel(state)`
-<button onclick=${() => state.clicks += 1}>
-    I'm a button that's been clicked ${() => state.clicks} times
-</button>
-`;
-
-document.body.appendChild(element);
-```
-
-`htmel` updates only what it needs to update by keeping references to elements
-inside of the bound element, without inefficient dom-doffing.
-
-In the above example, `htmel` hooked the `state` object so that when 
-`state.clicks` is set, `htmel` update the relevant TextNode.
+`class`, then the textNode `content`. The other irrelevant text didn't change.
 
 ## Examples
 Attribute value:
@@ -113,9 +124,31 @@ Events:
 </button>`
 ```
 
+Template (HTML element) inside a template:
+```javascript
+let state = {
+    someInsideData: {name: "old name"}
+}
+
+let element = htmel(state)`
+<div>
+    I have other elements inside of me
+    ${() => htmel(state.someInsideData)`
+        <div>${() => state.someInsideData.name}</div>
+    `}
+</div>
+`;
+
+// Modify prop of inner template
+state.someInsideData.name = "new name"
+
+// Modify whole inner template
+state.someInsideData = {name: "new name"}
+```
+
 Nested loop:
 ```javascript
-window.state = {
+let state = {
     items: [{
         name: "Mojojojo"
     }, {
@@ -130,7 +163,8 @@ ${() => state.items.map(item => htmel(item)`
 `)}
 </div>
 `;
-// Modify only specific name
+
+// Modify prop of specific item
 state.items[0].name += "s";
 
 // Modify the whole list
@@ -147,41 +181,133 @@ A single dom node can contain multiple expressions:
 `<div style="color:${() => state.color}; width:${() => state.width}px;">`
 ```
 
-Attribute names can also be calculated:
+Multiple states in single `htmel` template:
 ```javascript
-`<div ${() => state.something}="10px">10px somewhere</div>`
+htmel(state1, state2)`
+<div>
+    ${() => state1.text}
+    ${() => state2.text}
+</div>
+`;
+state1.text = "i am text"
+state2.text = "i am some other unrelated text"
 ```
 
-Comprehensive example highlighting all the features of `htmel`:
+Custom DOM Elements example:
+```html
+<body>
+<script type="module">
+    import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
+
+    // 25 lines to achieve React-like behaviour, while using web standards:
+    // CustomElements, ShadowRoot, MutationObserver, Attributes.
+    class HtmElement extends HTMLElement {
+        constructor(state) {
+            super();
+            // Props and state, like in React
+            this.state = state || {};
+            this.props = {};
+
+            const updateProp = attr => {
+                this.props[attr] = (this[attr] === undefined ? this.getAttribute(attr) : this[attr])
+            }
+
+            // Put current attributes into props
+            [...this.attributes].forEach(attr => updateProp(attr.name))
+
+            // Observe the custom element for attribute changes using MutationObserver, and update the props
+            const addProp = mutationsList => mutationsList.forEach(mutation => updateProp(mutation.attributeName));
+            new MutationObserver(addProp).observe(this, {attributes: true});
+
+            // Add shadow DOM
+            this.attachShadow({mode: 'open'});
+
+            // Create template and append to custom element
+            this.shadowRoot.appendChild(this.render());
+        }
+    }
+
+    // Define custom element
+    customElements.define("my-list-item", class extends HtmElement {
+        render() {
+            return htmel(this.state, this.props)`
+            <button onclick=${() => this.props.clicked()}>
+                click me for the ${() => this.props.clicks}th time.
+                random data: ${() => JSON.stringify(this.props.data)}
+            </button>
+            `
+        }
+    })
+
+    // Define another custom element
+    customElements.define("my-custom-element", class extends HtmElement {
+        constructor() {
+            // Send state to parent
+            super({
+                items: [
+                    {clicks: 0, data: {a: "i am data", b: 2}},
+                    {clicks: 0, data: {a: 123123, b: {c: [1, 2, 3]}}}
+                ],
+                title: "I AM TITLE",
+                titleSize: 20
+            })
+        }
+
+        render() {
+            return htmel(this.state, this.props)`
+            <div>
+                <style>
+                    h2 {
+                        margin: ${() => this.state.titleSize}px
+                    }
+                </style>
+                <h2>${() => this.state.title}</h2>
+                ${() => this.state.items.map(item => htmel(item)`
+                    <my-list-item
+                    clicks="${() => item.clicks}"
+                    clicked=${() => () => item.clicks += 1}
+                    data=${() => item.data}></my-list-item>
+                `)}
+            </div>
+            `
+        }
+    });
+</script>
+<my-custom-element></my-custom-element>
+</body>
+```
+Try it live on [JSFiddle](https://jsfiddle.net/Numbnut/cnb84v9h/)
+
+Comprehensive features example:
 ```javascript
 import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
 window.state = {
-    name: "Inigo Montoystory",
-    color: "red",
+        name: "Inigo Montoystory",
+        color: "red",
+        age: 3,
+        clicks: 1,
+        placeholder: "this is hint",
+        amAlive: true
+    };
+    window.innerState = {
+        deathColor: "blue"
+    };
+    window.secondState = {
+        age: 10
+    }
 
-    age: 3,
-    clicks: 1,
-
-    placeholder: "this is hint",
-
-    amAlive: true
-};
-
-window.innerState = {
-    deathColor: "blue"
-};
-
-let element = htmel(state)`
+    let element = htmel(state, secondState)`
 <div>
     My name is <span style="color: ${() => state.color}">
         ${() => state.name}
     </span>
 
     <div>i will live ${() => state.age + 1}ever</div>
+    <div>second state age is  ${() => secondState.age} yars</div>
     <div>i am ${"static"}</div>
 
-    <button onclick="${() => state.clicks += 1}">
+    <button onclick=${() => state.clicks += 1}>
         click me baby ${() => state.clicks} more time
     </button>
 
@@ -198,20 +324,19 @@ let element = htmel(state)`
         ${() => state.amAlive ? "yes" : htmel(innerState)`
             <span style="color: ${() => innerState.deathColor}; font-size: ${() => innerState.deathColor === "blue" ? "40px" : "13px"};">NO</span>`}
     </div>
-
 </div>
 `;
 
-// element is a regular html element
-document.body.appendChild(element);
+    // element is a regular html element
+    document.body.appendChild(element);
 
-// modifying the state
-state.name = "John Cena!!!";
+    // modifying the state
+    state.name = "John Cena!!!";
 
-// switching the color
-setInterval(() => state.color = state.color === "blue" ? "red" : "blue", 500);
+    // switching the color
+    setInterval(() => state.color = state.color === "blue" ? "red" : "blue", 500);
 ```
-Try it live on <a href="https://jsfiddle.net/Numbnut/90h36g1L/">JSFiddle</a>
+Try it live on [JSFiddle](https://jsfiddle.net/Numbnut/90h36g1L/3/)
 
 ## How does it work?
 Consider the following example:
