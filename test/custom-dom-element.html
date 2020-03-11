@@ -1,0 +1,80 @@
+<body>
+<script type="module">
+    import htmel from "../src/htmel.js"
+
+    // 25 lines to achieve React-like behaviour, while using web standards:
+    // CustomElements, ShadowRoot, MutationObserver, Attributes.
+    class HtmElement extends HTMLElement {
+        constructor(state) {
+            super();
+            // Props and state, like in React
+            this.state = state || {};
+            this.props = {};
+
+            const updateProp = attr => {
+                this.props[attr] = (this[attr] === undefined ? this.getAttribute(attr) : this[attr])
+            }
+
+            // Put current attributes into props
+            [...this.attributes].forEach(attr => updateProp(attr.name))
+
+            // Observe the custom element for attribute changes using MutationObserver, and update the props
+            const addProp = mutationsList => mutationsList.forEach(mutation => updateProp(mutation.attributeName));
+            new MutationObserver(addProp).observe(this, {attributes: true});
+
+            // Add shadow DOM
+            this.attachShadow({mode: 'open'});
+
+            // Create template and append to custom element
+            this.shadowRoot.appendChild(this.render());
+        }
+    }
+
+    // Define custom element
+    customElements.define("my-list-item", class extends HtmElement {
+        render() {
+            return htmel(this.state, this.props)`
+            <button onclick=${() => this.props.clicked()}>
+                click me for the ${() => this.props.clicks}th time.
+                random data: ${() => JSON.stringify(this.props.data)}
+            </button>
+            `
+        }
+    })
+
+    // Define another custom element
+    customElements.define("my-custom-element", class extends HtmElement {
+        constructor() {
+            // Send state to parent
+            super({
+                items: [
+                    {clicks: 0, data: {a: "i am data", b: 2}},
+                    {clicks: 0, data: {a: 123123, b: {c: [1, 2, 3]}}}
+                ],
+                title: "I AM TITLE",
+                titleSize: 20
+            })
+        }
+
+        render() {
+            return htmel(this.state, this.props)`
+            <div>
+                <style>
+                    h2 {
+                        margin: ${() => this.state.titleSize}px
+                    }
+                </style>
+                <h2>${() => this.state.title}</h2>
+                ${() => this.state.items.map(item => htmel(item)`
+                    <my-list-item
+                    clicks="${() => item.clicks}"
+                    clicked=${() => () => item.clicks += 1}
+                    data=${() => item.data}></my-list-item>
+                `)}
+            </div>
+            `
+        }
+    });
+</script>
+<my-custom-element></my-custom-element>
+</body>
