@@ -1,6 +1,6 @@
 {
   "name": "htmel",
-  "version": "1.0.7",
+  "version": "1.1.1",
   "description": "Minimal HTML one-way binding library",
   "module": "./src/htmel.js",
   "scripts": {

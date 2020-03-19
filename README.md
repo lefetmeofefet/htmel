@@ -6,6 +6,7 @@ Simple, Efficient, Declarative HTML templates with one-way data binding.
 _Why should I use this over the likes of react and vue?_
 * Faster
 * Simpler
+* Lighter
 * Unopinionated
 
 Time counter example:
@@ -102,17 +103,37 @@ First `state.class` was set, and then `state.content`.
 Instead of overwriting the whole div twice, `htmel` first updates the property 
 `class`, then the textNode `content`. The other irrelevant text didn't change.
 
+#### Faster than React
+React revels in its speed by minimizing DOM updates. In order to minimize them, 
+React generates a diff between virtual DOMs on each update.
+In the above example, React would have created the whole div in memory,
+compared the current and new divs, and only updated the diff in the DOM.
+Htmel on the other hand keeps a reference to elements in the DOM, with no 
+need for the diff process.
+
 ## Examples
-Attribute value:
+Text
 ```javascript
-`<div dir="${() => state.dir}">what is my direction?</div>`
+`<div> 
+    ${() => state.text} some text between, ${() => state.moreText}
+</div>`
+```
+
+Conditionals:
+```javascript
+`
+<div>
+    ${() => state.a ? "a" : "b"}
+    ${() => state.condition && "am i here?"}
+</div>
+`
 ```
 
 CSS:
 ```javascript
 `<style> 
     #my-element {
-        color: ${() => state.color}
+        color: ${() => state.color};
     }
 </style>`
 ```
@@ -124,7 +145,28 @@ Events:
 </button>`
 ```
 
-Template (HTML element) inside a template:
+Attributes:
+```javascript
+`<div dir="${() => state.dir}">what is my direction?</div>`
+```
+
+Attribute name:
+```javascript
+`<div ${() => state.attrName}>i have some attr</div>`
+```
+
+Attribute dict:
+```javascript
+let state = {
+    inputAttrs: {
+        dir: "left",
+        placeholder: "i am placeholder"
+    }
+}
+htmel()`<input ${() => state.inputAttrs}></input>`
+```
+
+Nesting template (HTML element) inside a template:
 ```javascript
 let state = {
     someInsideData: {name: "old name"}
@@ -142,11 +184,11 @@ let element = htmel(state)`
 // Modify prop of inner template
 state.someInsideData.name = "new name"
 
-// Modify whole inner template
+// Modify whole inner template (prop of outer template)
 state.someInsideData = {name: "new name"}
 ```
 
-Nested loop:
+List of elements:
 ```javascript
 let state = {
     items: [{
@@ -176,7 +218,7 @@ A single expression can contain multiple properties:
 `<div>${() => state.a + state.b}</div>`
 ```
 
-A single dom node can contain multiple expressions:
+A single dom node can contain multiple expressions - here we see style attribute node:
 ```javascript
 `<div style="color:${() => state.color}; width:${() => state.width}px;">`
 ```
@@ -193,13 +235,25 @@ state1.text = "i am text"
 state2.text = "i am some other unrelated text"
 ```
 
+Multiple templates with one state (good for displaying global state):
+```javascript
+htmel(state)`
+<div>text is ${() => state.text}</div>
+`
+htmel(state)`
+<div>${() => state.text} is text</div>
+`
+;
+state.text = "life"
+```
+
 Custom DOM Elements example:
 ```html
 <body>
 <script type="module">
-    import htmel from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
+    import htmel, {htmels} from "https://unpkg.com/htmel@latest/dist/htmel.min.js"
 
-    // 25 lines to achieve React-like behaviour, while using web standards:
+    // 30 lines to achieve React-like behaviour, while using web standards:
     // CustomElements, ShadowRoot, MutationObserver, Attributes.
     class HtmElement extends HTMLElement {
         constructor(state) {
@@ -223,17 +277,21 @@ Custom DOM Elements example:
             this.attachShadow({mode: 'open'});
 
             // Create template and append to custom element
-            this.shadowRoot.appendChild(this.render());
+            let elements = this.render();
+            elements.forEach(element => this.shadowRoot.appendChild(element));
+        }
+
+        get html() {
+            return htmels(this.props, this.state)
         }
     }
 
     // Define custom element
     customElements.define("my-list-item", class extends HtmElement {
         render() {
-            return htmel(this.state, this.props)`
+            return this.html`
             <button onclick=${() => this.props.clicked()}>
                 click me for the ${() => this.props.clicks}th time.
-                random data: ${() => JSON.stringify(this.props.data)}
             </button>
             `
         }
@@ -245,30 +303,32 @@ Custom DOM Elements example:
             // Send state to parent
             super({
                 items: [
-                    {clicks: 0, data: {a: "i am data", b: 2}},
-                    {clicks: 0, data: {a: 123123, b: {c: [1, 2, 3]}}}
+                    {clicks: 0},
+                    {clicks: 0}
                 ],
-                title: "I AM TITLE",
-                titleSize: 20
+                margin: 20
             })
         }
 
         render() {
-            return htmel(this.state, this.props)`
-            <div>
+            return this.html`
                 <style>
-                    h2 {
-                        margin: ${() => this.state.titleSize}px
+                    :host {
+                        display: block;
+                        margin: ${() => this.state.margin}px;
                     }
                 </style>
-                <h2>${() => this.state.title}</h2>
-                ${() => this.state.items.map(item => htmel(item)`
-                    <my-list-item
-                    clicks="${() => item.clicks}"
-                    clicked=${() => () => item.clicks += 1}
-                    data=${() => item.data}></my-list-item>
-                `)}
-            </div>
+                <div>
+                    ${() => this.state.items.map(item => htmel(item)`
+                        <my-list-item
+                            clicks="${() => item.clicks}"
+                            clicked=${() => () => item.clicks += 1}
+                            data=${() => item.data}></my-list-item>
+                    `)}
+                </div>
+                <button onclick=${() => this.state.items = [...this.state.items, {clicks: 0}]}>
+                    add a button
+                </button>
             `
         }
     });
@@ -276,7 +336,7 @@ Custom DOM Elements example:
 <my-custom-element></my-custom-element>
 </body>
 ```
-Try it live on [JSFiddle](https://jsfiddle.net/Numbnut/cnb84v9h/)
+Try it live on [JSFiddle](https://jsfiddle.net/Numbnut/cnb84v9h/5/)
 
 Comprehensive features example:
 ```javascript

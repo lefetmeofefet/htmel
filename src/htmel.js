@@ -25,6 +25,7 @@
 
 /** TODO
  * print prop to expression map + expression to domNode map. basically, print the whole template process...
+ * improve custom dom elements example
  * spread attributes (list of attributes, as dict)
  * profile memory: do we leak? especially watcher
  * performance test
@@ -42,11 +43,21 @@
  *      All of these must work together!!!
  *
  * make element wrapper: HTMElement, like litElement
+ * // TODO IMPORTANT HERE:
+ * V annoying to have to wrap each component with <div>. multiple elements inside template? THINK HOW TO FIX THIS IS IMPORTANT
+ * support style dict
  * list additions: instead of overwriting the whole list each time, check which bound objects CHANGED (added / removed)
- * when both attribute name and value contain expression, only one BoundNode is created for the name and value is not updated
+ * list: remove the container element. it fucks up css
+ * V props should be removed if value is null. example: when making text-input element, placeholder shouldn't be there if its null
+ * V attr name support: a must. attributes like "readonly" have to disappear to not be readonly
+ * V allow one state object to be shared with multiple templates(redux implementation without the shit)
+ * V true / false attributes pass as strings and its annoying
+ * V Don't display null / undefined text nodes (i wanna do ${() => this.state.something && <stuff/>})
+ * Make props that start with "on" when called throw events! so that the parent element will listen normally
+ * // TODO: END OF IMPORTANT
+
  * support promises as expressions alongside cbs
  * call expressions with some parameter that gives them something, idk what yet (smth => ... instead of () => ...)
- * receive multiple state objects (redux implementation without the shit)
  * tests! so many tests to make.
  *      - Error handling
  *          - expression in html tag
@@ -57,8 +68,8 @@
  *          - expression that returns nothing shouldn't crash
  *          - TextNode, test type changes: string -> list, obj -> list, string -> obj, list -> obj, list -> string, list -> obj
  *          -
- * document
- *      - the behavior of events (functino, function that returns function...) 
+ * documentation
+ *      - the behavior of events (functino, function that returns function...)
  *      - attributes: strings vs null vs undefined vs object vs function
  *      - lists: list container
  */
@@ -110,7 +121,7 @@ class BoundNode {
     /**
      * A single HTML node, containing all that's needed
      * @param {[Expression]} expressions
-     * @param {Element} domNode
+     * @param {HTMLElement} domNode
      * @param {String} expressionsLocation
      */
     constructor(expressions, domNode, expressionsLocation) {
@@ -123,20 +134,28 @@ class BoundNode {
             [SearchLocations.TEXT_NODE]: () => domNode.data,
             // Attribute value
             [SearchLocations.ATTR_VALUE]: () => domNode.value,
+            // Attribute name
+            [SearchLocations.ATTR_NAME]: () => domNode.name,
         }[expressionsLocation]();
+        this.ownerElement = this.domNode.ownerElement
     }
 
     update() {
         if (this.expressionsLocation === SearchLocations.TEXT_NODE) {
             this.updateTextNodeValue()
-        } else {
+        } else if (this.expressionsLocation === SearchLocations.ATTR_VALUE) {
             this.updateAttributeNodeValue()
+        } else if (this.expressionsLocation === SearchLocations.ATTR_NAME) {
+            this.updateAttributeNodeName()
         }
     }
 
     updateTextNodeValue() {
         let expression = this.expressions[0];
         let newValue = expression.lastResult;
+        if (newValue == null || newValue === false) {
+            newValue = ""
+        }
 
         // Remove old array
         if (this._lastTextNodeValue instanceof Array) {
@@ -160,9 +179,8 @@ class BoundNode {
                 this.domNode.appendChild(domNodeToAdd);
             }
         } else if (typeof newValue === "object") {
-            // Either element or object. If object, we throw exception
-            // TODO: Check if instanceof HTMLElement. if not, what do we do with objects? attr key-value mapping?
-            // TODO: Add error message with trying to put a dict here
+            // Either element or object. If object, wat do we do??
+            // TODO: WAT DO WE DO?
             this.domNode.replaceWith(newValue);
             this.domNode = newValue;
         } else {
@@ -172,6 +190,7 @@ class BoundNode {
                 this.domNode.replaceWith(newTextNode);
                 this.domNode = newTextNode;
             } else {
+                // If just string
                 this.domNode.data = newValue;
             }
         }
@@ -181,7 +200,7 @@ class BoundNode {
 
     updateAttributeNodeValue() {
         // Checks if expression is an event handler, and adds an event listener if true.
-        if (this.expressionsLocation === SearchLocations.ATTR_VALUE && this.expressions[0].isEventHandler) {
+        if (this.expressions[0].isEventHandler) {
             if (this.expressions.length > 1) {
                 let forbiddenEventHandlerText = _fillStrWithExpressions(this.initialValue, this.expressions);
                 throw `HTMEL: Cant have more than one expression as event handler: ${forbiddenEventHandlerText}`
@@ -189,21 +208,77 @@ class BoundNode {
             this._setEventListener();
         } else {
             let lastResult = this.expressions[0].lastResult;
-            // Check if attr value is function or object, and set it directly on the element instead of attribute
-            if (this.expressions.length === 1 && ["function", "object"].includes(typeof lastResult)) {
-                this.domNode.ownerElement[this.domNode.name] = lastResult;
-                this.domNode.value = lastResult;
+            let isJustExpression = this.expressions.length === 1 && this.initialValue.length === this.expressions[0].id.length;
+            let ownerElementPropValue = undefined;
+
+            if (isJustExpression && lastResult === true) {
+                // If we get true, just set the attribute with no value (<div a></div>)
+                this.setDomNode("");
+            } else if (isJustExpression && (lastResult === false || lastResult == null)) {
+                // If value is falsy, remove the attribute
+                this.ownerElement.removeAttribute(this.domNode.name);
+            } else if (isJustExpression && ["function", "object"].includes(typeof lastResult)) {
+                // if attr value is function or object, set it directly on the element instead of attribute because
+                // attributes can only hold strings
+                ownerElementPropValue = lastResult
+                this.setDomNode(lastResult);
             } else {
-                // Replaces ids with expression values
+                // If string, replaces ids with expression values
                 let newValue = this.initialValue;
                 for (let expression of this.expressions) {
                     newValue = newValue.replace(expression.id, expression.lastResult)
                 }
-
-                // TODO: Save last domValue and only update if the value changed. spare dom updates yay
-                this.domNode.ownerElement[this.domNode.name] = undefined;
-                this.domNode.value = newValue;
+                this.setDomNode(newValue);
             }
+
+            this.ownerElement[this.domNode.name] = ownerElementPropValue;
+        }
+    }
+
+    setDomNode(value) {
+        this.domNode.value = value;
+        if (this.domNode.ownerElement == null) {
+            this.ownerElement.setAttributeNode(this.domNode)
+        }
+    }
+
+    updateAttributeNodeName() {
+        let lastResult = this.expressions[0].lastResult;
+        let isJustExpression = this.expressions.length === 1 && this.initialValue.length === this.expressions[0].id.length;
+
+        if (this._lastAttributeMap) {
+            // Removes last attribute mapping if there was
+            for (let [attrName, _] of this._lastAttributeMap) {
+                this.ownerElement.removeAttribute(attrName);
+            }
+            this._lastAttributeMap = null
+        }
+        else {
+            // Removes last attribute
+            this.ownerElement.removeAttribute(this.domNode.name)
+        }
+
+        if (isJustExpression && (lastResult === false || lastResult == null || lastResult === "")) {
+            // Don't add any attribute if value is falsy
+            return
+        }
+
+        if (isJustExpression && typeof lastResult === "object") {
+            // If we get an object, insert it as key-value mapping of attributes
+            this._lastAttributeMap = Object.entries(lastResult)
+            for (let [attrName, value] of this._lastAttributeMap) {
+                this.ownerElement.setAttribute(attrName, value);
+            }
+        }
+        else {
+            // If string, replaces ids with expression values
+            let newName = this.initialValue;
+            for (let expression of this.expressions) {
+                newName = newName.replace(expression.id, expression.lastResult)
+            }
+
+            this.ownerElement.setAttribute(newName, this.domNode.value);
+            this.domNode = this.ownerElement.getAttributeNode(newName);
         }
     }
 
@@ -268,13 +343,7 @@ function _joinTemplateStrings(arr1, arr2) {
 function _createTemplateElement(html) {
     const templateTag = document.createElement("template");
     templateTag.innerHTML = html;
-
-    if (templateTag.content.children.length > 1) {
-        console.warn("HTMLefeTemplate: More than one child element in template, ignoring all other than the first")
-    } else if (templateTag.content.children.length === 0) {
-        throw "HTMEL: Component can't be empty"
-    }
-    return templateTag.content.firstElementChild;
+    return templateTag;
 }
 
 /**
@@ -323,16 +392,22 @@ function _fillStrWithExpressions(str, expressions) {
 /**
  * Creates BoundNodes from expressionIds inside `element`.
  * Each BoundNode references a list of expressions, and each expression has a reference to it's bound node.
- * @param {Element} element
+ * @param {HTMLTemplateElement} element
  * @param {[Expression]} expressions
  * @private
  */
 function bindNodesToExpressions(element, expressions) {
-    /** @type {Map<Element, BoundNode>} */
+    /** @type {Map<Node, BoundNode>} */
     const domNodeToBoundNode = new Map();
 
     for (let expression of expressions) {
-        let searchResult = find(element, expression.id);
+        let searchResult = null;
+        for (let child of element.content.children) {
+            searchResult = find(child, expression.id);
+            if (searchResult != null) {
+                break;
+            }
+        }
         if (searchResult == null) {
             throw `HTMEL: Expression location is not valid: ${"${" + expression._cb.toString() + "}"}`
         }
@@ -347,12 +422,6 @@ function bindNodesToExpressions(element, expressions) {
         if (searchLocation === SearchLocations.HTML_TAG) {
             let forbiddenTagText = _fillStrWithExpressions(`<${domNode.localName}>`, [expression]);
             throw `HTMEL: Calculating element name is not allowed: ${forbiddenTagText}`
-        }
-
-        // If template is inside attribute name, throw exception
-        if (searchLocation === SearchLocations.ATTR_NAME) {
-            let forbiddenAttrValueText = _fillStrWithExpressions(domNode.localName, [expression]);
-            throw `HTMEL: Calculating attribute name is not allowed: ${forbiddenAttrValueText}`
         }
 
         // Expressions on attrs that start with "on" are event handlers
@@ -376,87 +445,105 @@ function bindNodesToExpressions(element, expressions) {
     console.log([...domNodeToBoundNode.values()]);
 }
 
+function createBoundElements(propsObjects, strings, expressionCbs) {
+    // Create expressions and htmel element
+    const expressions = expressionCbs.map(cb => new Expression(cb));
+    const element = _createTemplateElement(_joinTemplateStrings(strings, expressions.map(e => e.id)));
+    bindNodesToExpressions(element, expressions);
+
+    let isExecutingExpression = false;
+    /** @type {Set<String>} */
+    let changedPropsList = new Set();
+    /** @type {Set<String>} */
+    let propsAccessedInsideExpression = new Set();
+
+    propsObjects.forEach((propsObject, index) => {
+        if (typeof propsObject !== "object") {
+            throw `HTMEL: Props object must be an object, got ${typeof propsObject}`
+        }
+        watch(
+            propsObject,
+            key => isExecutingExpression && propsAccessedInsideExpression.add(`state${index}.${key}`),
+            (key, value) => {
+                // TODO: Check if value is different than the current one, and spare expression evaluations
+                // We use `state${index}.${key}` because the same prop in different states objects has to be different
+                changedPropsList.add(`state${index}.${key}`);
+                render();
+            }
+        );
+    })
+
+    /** @type {Map<String, Set<Expression>>} */
+    let propsToExpressions = new Map();
+
+    const render = throttle(() => {
+        let expressionsToExecute = new Set();
+        for (let changedProp of changedPropsList) {
+            let _expressionsToExecute = propsToExpressions.get(changedProp);
+            if (_expressionsToExecute) {
+                _expressionsToExecute.forEach(expression => expressionsToExecute.add(expression));
+            } else {
+                console.warn(`A prop changed but no expression is linked to it: ${
+                    changedProp.substr(changedProp.indexOf(".") + 1)}`)
+            }
+        }
+        changedPropsList.clear();
+        updateExpressions([...expressionsToExecute])
+
+    }, 1000 / 60);
+
+
+    /** @param {[Expression]} exs */
+    const updateExpressions = exs => {
+        for (let expression of exs) {
+            isExecutingExpression = true;
+            expression.execute();
+            isExecutingExpression = false;
+
+            // Map new props to expressions
+            propsAccessedInsideExpression.forEach(propName => {
+                if (!propsToExpressions.has(propName)) {
+                    propsToExpressions.set(propName, new Set());
+                }
+                propsToExpressions.get(propName).add(expression)
+            });
+            propsAccessedInsideExpression.clear();
+        }
+
+        // Update nodes with updated expressions
+        for (let boundNode of new Set(exs.map(ex => ex.boundNode))) {
+            boundNode.update()
+        }
+    };
+
+    // Initial render
+    updateExpressions(expressions);
+    return [...element.content.children]
+}
+
 /**
  * Returns an html element that will be modified when state object's properties change.
  * @param {[Object]} propsObjects Holds the state of this htmel element
  * @returns {function(*=, ...[*]): Element}
  */
 function htmel(...propsObjects) {
-    return (strings, ...expressionsCbs) => {
-        // Create expressions and htmel element
-        const expressions = expressionsCbs.map(cb => new Expression(cb));
-        const element = _createTemplateElement(_joinTemplateStrings(strings, expressions.map(e => e.id)));
-        bindNodesToExpressions(element, expressions);
+    return (strings, ...expressionCbs) => {
+        let elements = createBoundElements(propsObjects, strings, expressionCbs);
+        if (elements.length > 1) {
+            console.warn("HTMLefeTemplate: More than one child element in template, ignoring all other than the first")
+        }
+        else if (elements === 0) {
+            throw "HTMEL: Component can't be empty"
+        }
+        return elements[0]
+    }
+}
 
-        let isExecutingExpression = false;
-        /** @type {Set<String>} */
-        let changedPropsList = new Set();
-        /** @type {Set<String>} */
-        let propsAccessedInsideExpression = new Set();
-
-        propsObjects.forEach((propsObject, index) => {
-            if (typeof propsObject !== "object") {
-                throw `HTMEL: Props object must be an object, got ${typeof propsObject}`
-            }
-            watch(
-                propsObject,
-                key => isExecutingExpression && propsAccessedInsideExpression.add(`state${index}.${key}`),
-                (key, value) => {
-                    // TODO: Check if value is different than the current one, and spare expression evaluations
-                    // We use `state${index}.${key}` because the same prop in different states objects has to be different
-                    changedPropsList.add(`state${index}.${key}`);
-                    render();
-                }
-            );
-        })
-
-        /** @type {Map<String, Set<Expression>>} */
-        let propsToExpressions = new Map();
-
-        const render = throttle(() => {
-            let expressionsToExecute = new Set();
-            for (let changedProp of changedPropsList) {
-                let _expressionsToExecute = propsToExpressions.get(changedProp);
-                if (_expressionsToExecute) {
-                    _expressionsToExecute.forEach(expression => expressionsToExecute.add(expression));
-                } else {
-                    console.warn(`A prop changed but no expression is linked to it: ${
-                        changedProp.substr(changedProp.indexOf(".") + 1)}`)
-                }
-            }
-            changedPropsList.clear();
-            updateExpressions([...expressionsToExecute])
-
-        }, 1000 / 60);
-
-
-        /** @param {[Expression]} exs */
-        const updateExpressions = exs => {
-            for (let expression of exs) {
-                isExecutingExpression = true;
-                expression.execute();
-                isExecutingExpression = false;
-
-                // Map new props to expressions
-                propsAccessedInsideExpression.forEach(propName => {
-                    if (!propsToExpressions.has(propName)) {
-                        propsToExpressions.set(propName, new Set());
-                    }
-                    propsToExpressions.get(propName).add(expression)
-                });
-                propsAccessedInsideExpression.clear();
-            }
-
-            // Update nodes with updated expressions
-            for (let boundNode of new Set(exs.map(ex => ex.boundNode))) {
-                boundNode.update()
-            }
-        };
-
-        // Initial render
-        updateExpressions(expressions);
-        return element
+function htmels(...propsObjects) {
+    return (strings, ...expressionCbs) => {
+        return createBoundElements(propsObjects, strings, expressionCbs)
     }
 }
 
 export default htmel
+export {htmels}

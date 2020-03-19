@@ -1,6 +1,5 @@
 // TODO: make library
 
-
 const SearchLocations = {
     TEXT_NODE: "Text/CSS node",
     ATTR_VALUE: "Attribute value",
@@ -12,7 +11,7 @@ const SearchLocations = {
  *
  * @param rootElement
  * @param searchValue
- * @returns {{domNode: HTMLElement, searchLocation: String} | null}
+ * @returns {{domNode: Node, searchLocation: String} | null}
  */
 function find(rootElement, searchValue) {
     const xpathSearchers = [

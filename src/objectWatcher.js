@@ -1,5 +1,7 @@
 // TODO: Make library.
 
+let gettersSettersPropName = "___gettersSettersProp"
+
 /**
  * Calls `onGet` and `onSet` each time a property is accessed / set.
  * It does so by wrapping the object with getters and setters
@@ -8,6 +10,19 @@
  * @param {Function} onSet
  */
 function watch(object, onGet, onSet) {
+    if (object[gettersSettersPropName] != null) {
+        object[gettersSettersPropName].push({onGet, onSet})
+    } else {
+        object[gettersSettersPropName] = [{onGet, onSet}];
+        watchObject(
+            object,
+            prop => object[gettersSettersPropName].forEach(getset => getset.onGet(prop)),
+            (prop, value) => object[gettersSettersPropName].forEach(getset => getset.onSet(prop, value))
+        )
+    }
+}
+
+function watchObject(object, onGet, onSet) {
     const propsHolder = {};
 
     const wrapWithGetSet = propertyName => {
@@ -26,6 +41,9 @@ function watch(object, onGet, onSet) {
     // Wrap existing properties with getters & setters
     const properties = Object.getOwnPropertyDescriptors(object);
     for (let propertyName of Object.keys(properties)) {
+        if (propertyName === gettersSettersPropName) {
+            continue
+        }
         propsHolder[propertyName] = object[propertyName];
         wrapWithGetSet(propertyName)
     }

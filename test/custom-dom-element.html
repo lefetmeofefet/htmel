@@ -1,8 +1,9 @@
 <body>
 <script type="module">
-    import htmel from "../src/htmel.js"
+    import htmel, {htmels} from "../dist/htmel.min.js"
+    // import htmel, {htmels} from "../src/htmel.js"
 
-    // 25 lines to achieve React-like behaviour, while using web standards:
+    // 30 lines to achieve React-like behaviour, while using web standards:
     // CustomElements, ShadowRoot, MutationObserver, Attributes.
     class HtmElement extends HTMLElement {
         constructor(state) {
@@ -26,17 +27,21 @@
             this.attachShadow({mode: 'open'});
 
             // Create template and append to custom element
-            this.shadowRoot.appendChild(this.render());
+            let elements = this.render();
+            elements.forEach(element => this.shadowRoot.appendChild(element));
+        }
+
+        get html() {
+            return htmels(this.props, this.state)
         }
     }
 
     // Define custom element
     customElements.define("my-list-item", class extends HtmElement {
         render() {
-            return htmel(this.state, this.props)`
+            return this.html`
             <button onclick=${() => this.props.clicked()}>
                 click me for the ${() => this.props.clicks}th time.
-                random data: ${() => JSON.stringify(this.props.data)}
             </button>
             `
         }
@@ -48,30 +53,32 @@
             // Send state to parent
             super({
                 items: [
-                    {clicks: 0, data: {a: "i am data", b: 2}},
-                    {clicks: 0, data: {a: 123123, b: {c: [1, 2, 3]}}}
+                    {clicks: 0},
+                    {clicks: 0}
                 ],
-                title: "I AM TITLE",
-                titleSize: 20
+                margin: 20
             })
         }
 
         render() {
-            return htmel(this.state, this.props)`
-            <div>
+            return this.html`
                 <style>
-                    h2 {
-                        margin: ${() => this.state.titleSize}px
+                    :host {
+                        display: block;
+                        margin: ${() => this.state.margin}px;
                     }
                 </style>
-                <h2>${() => this.state.title}</h2>
-                ${() => this.state.items.map(item => htmel(item)`
-                    <my-list-item
-                    clicks="${() => item.clicks}"
-                    clicked=${() => () => item.clicks += 1}
-                    data=${() => item.data}></my-list-item>
-                `)}
-            </div>
+                <div>
+                    ${() => this.state.items.map(item => htmel(item)`
+                        <my-list-item
+                            clicks="${() => item.clicks}"
+                            clicked=${() => () => item.clicks += 1}
+                            data=${() => item.data}></my-list-item>
+                    `)}
+                </div>
+                <button onclick=${() => this.state.items = [...this.state.items, {clicks: 0}]}>
+                    add a button
+                </button>
             `
         }
     });
